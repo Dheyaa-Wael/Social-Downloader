@@ -1,16 +1,53 @@
-from yt_dlp import YoutubeDL
 import os
+import sys
+import shutil
+from yt_dlp import YoutubeDL
+from urllib.parse import urlparse
+from yt_dlp.utils import DownloadError
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def get_ffmpeg_location():
+    system_ffmpeg = shutil.which("ffmpeg")
+    if system_ffmpeg:
+        return os.path.dirname(system_ffmpeg)
+
+    name = "ffmpeg.exe" if sys.platform.startswith("win") else "ffmpeg"
+    bundled = os.path.join(BASE_DIR, "tools", name)
+    if os.path.isfile(bundled):
+        return os.path.dirname(bundled)
+
+    raise FileNotFoundError(
+        "ffmpeg not found. Install it"
+    )
+
+def is_valid_url(url: str) -> bool:
+    try:
+        p = urlparse(url.strip())
+        return p.scheme in ("http", "https") and bool(p.netloc)
+    except ValueError:
+        print("this url is invalid")
+        return False
+
+def is_supported_url(url: str) -> bool:
+    opts = {"quiet": True, "skip_download": True, "noplaylist": True}
+    try:
+        with YoutubeDL(opts) as ydl:
+            ydl.extract_info(url, download=False)
+        return True
+    except DownloadError:
+        return False
 
 class youtube_video:
-    URL = str
-    has_2160 = bool
-    has_1440 = bool
-    has_1080 = bool
-    has_720 = bool
-    has_480 = bool
-    has_360 = bool
-    has_240 = bool
-    has_144 = bool
+    URL: str
+    has_2160: bool
+    has_1440: bool
+    has_1080: bool
+    has_720: bool
+    has_480: bool
+    has_360: bool
+    has_240: bool
+    has_144: bool
 
     def display(self):
         print(f"2160p: {self.has_2160}")
@@ -36,51 +73,82 @@ class youtube_video:
     def check_resolution(self):
         ydl_opts = {
         }
-        with YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(self.URL, download=False)
-            formats = info.get('formats', [])
-            for f in formats:
-                format_note = f.get("format_note")
-                if format_note == "2160p" or format_note == "2160p60":
-                    self.has_2160 = True
-                elif format_note == "1440p" or format_note == "1440p60":
-                    self.has_1440 = True
-                elif format_note == "1080p" or format_note == "1080p60":
-                    self.has_1080 = True
-                elif format_note == "720p" or format_note == "720p60":
-                    self.has_720 = True
-                elif format_note == "480p":
-                    self.has_480 = True
-                elif format_note == "360p":
-                    self.has_360 = True
-                elif format_note == "240p":
-                    self.has_240 = True
-                elif format_note == "144p":
-                    self.has_144 = True
-                else:
-                    pass
+        if is_supported_url:
+            with YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(self.URL, download=False)
+                formats = info.get('formats', [])
+                for f in formats:
+                    format_note = f.get("format_note")
+                    if format_note == "2160p" or format_note == "2160p60":
+                        self.has_2160 = True
+                    elif format_note == "1440p" or format_note == "1440p60":
+                        self.has_1440 = True
+                    elif format_note == "1080p" or format_note == "1080p60":
+                        self.has_1080 = True
+                    elif format_note == "720p" or format_note == "720p60":
+                        self.has_720 = True
+                    elif format_note == "480p":
+                        self.has_480 = True
+                    elif format_note == "360p":
+                        self.has_360 = True
+                    elif format_note == "240p":
+                        self.has_240 = True
+                    elif format_note == "144p":
+                        self.has_144 = True
+                    else:
+                        pass
     
     def download_video(self,resolution):
         ydl_opts = {
             'format': f'bestvideo[height<={resolution}]+bestaudio/best',
             'merge_output_format': 'mp4',
-            'ffmpeg_location': os.path.dirname(os.path.abspath("tools/ffmpeg.exe")),
+            'ffmpeg_location': get_ffmpeg_location(),
         }
-        with YoutubeDL(ydl_opts) as ydl:
-            ydl.download(self.URL)
+        if is_supported_url(self.URL):
+            with YoutubeDL(ydl_opts) as ydl:
+                ydl.download(self.URL)
 
     def download_audio(self):
         ydl_opts = {
             'format': 'bestaudio',
-            'ffmpeg_location': os.path.dirname(os.path.abspath("tools/ffmpeg.exe")),
+            'ffmpeg_location': get_ffmpeg_location(),
         }
-        with YoutubeDL(ydl_opts) as ydl:
-            ydl.download(self.URL)
+        if is_supported_url(self.URL):
+            with YoutubeDL(ydl_opts) as ydl:
+                ydl.download(self.URL)
 
+def main():
+    while True:
+        URL = input("Enter video URL: ").strip()
+        if not is_valid_url(URL):
+            print("That doesn't look like a valid URL.")
+            continue
+        if not is_supported_url(URL):
+            print("Valid URL, but no video could be found or the site isn't supported.")
+            continue
+        break
 
-URL = input("Enter video URL: ")
-video = youtube_video(URL)
-video.check_resolution()
-video.display()
-resolution = int(input("enter resolution without (p): "))
-video.download_video(resolution)
+    video = youtube_video(URL)
+    while True:
+        choice = int(input("[1] download video [2] download audio: "))
+        if choice == 1:
+            video.check_resolution()
+            video.display()
+            while True:
+                resolution = int(input("enter resolution without (p): "))
+                if resolution > 144:
+                    video.download_video(resolution)
+                    break
+                else:
+                    print("Enter valid resolution")
+                    continue
+            break
+        elif choice == 2:
+            video.download_audio()
+            break
+        else:
+            print("enter valid number")
+            continue
+
+if __name__ == "__main__":
+    main()
