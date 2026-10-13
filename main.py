@@ -73,7 +73,7 @@ class youtube_video:
     def check_resolution(self):
         ydl_opts = {
         }
-        if is_supported_url:
+        if is_supported_url(self.URL):
             with YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(self.URL, download=False)
                 formats = info.get('formats', [])
@@ -97,6 +97,8 @@ class youtube_video:
                         self.has_144 = True
                     else:
                         pass
+        else:
+            print("Valid URL, but no video could be found or the site isn't supported.")
     
     def download_video(self,resolution):
         ydl_opts = {
@@ -105,17 +107,23 @@ class youtube_video:
             'ffmpeg_location': get_ffmpeg_location(),
         }
         if is_supported_url(self.URL):
-            with YoutubeDL(ydl_opts) as ydl:
-                ydl.download(self.URL)
+            try:
+                with YoutubeDL(ydl_opts) as ydl:
+                    ydl.download(self.URL)
+            except Exception as e:
+                print(f"Error occurred while downloading video: {e}")
 
     def download_audio(self):
         ydl_opts = {
-            'format': 'bestaudio',
+            'format': 'bestaudio/best',
             'ffmpeg_location': get_ffmpeg_location(),
         }
         if is_supported_url(self.URL):
-            with YoutubeDL(ydl_opts) as ydl:
-                ydl.download(self.URL)
+            try:
+                with YoutubeDL(ydl_opts) as ydl:
+                    ydl.download(self.URL)
+            except Exception as e:
+                print(f"Error occurred while downloading audio: {e}")
 
 def main():
     while True:
@@ -130,13 +138,21 @@ def main():
 
     video = youtube_video(URL)
     while True:
-        choice = int(input("[1] download video [2] download audio: "))
+        try:
+            choice = int(input("[1] download video [2] download audio: "))
+        except ValueError:
+            print("Please enter a valid number.")
+            continue
         if choice == 1:
             video.check_resolution()
             video.display()
             while True:
-                resolution = int(input("enter resolution without (p): "))
-                if resolution > 144:
+                try:
+                    resolution = int(input("enter resolution without (p): "))
+                except ValueError:
+                    print("Please enter a valid number.")
+                    continue
+                if resolution >= 144:
                     video.download_video(resolution)
                     break
                 else:
