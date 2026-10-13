@@ -115,7 +115,12 @@ class youtube_video:
 
     def download_audio(self):
         ydl_opts = {
-            'format': 'bestaudio/best',
+            'format': 'm4a/bestaudio/best',
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '0',
+            }],
             'ffmpeg_location': get_ffmpeg_location(),
         }
         if is_supported_url(self.URL):
