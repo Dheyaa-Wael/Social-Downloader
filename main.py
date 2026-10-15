@@ -1,11 +1,31 @@
+import importlib.util
 import os
+import subprocess
 import sys
 import shutil
+def ensure_yt_dlp():
+    if importlib.util.find_spec("yt_dlp") is not None:
+        print("yt-dlp is already installed.")
+        return
+
+    print("yt-dlp is not installed.")
+    answer = input("Install it now? [y/n]: ").strip().lower()
+    if answer != "y":
+        print("Install it manually with:  pip install -r requirements.txt")
+        sys.exit(1)
+
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "yt-dlp"])
+    except subprocess.CalledProcessError:
+        print("Installation failed. Try:  pip install yt-dlp")
+        sys.exit(1)
+ensure_yt_dlp()
 from yt_dlp import YoutubeDL
 from urllib.parse import urlparse
 from yt_dlp.utils import DownloadError
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 
 def get_ffmpeg_location():
     system_ffmpeg = shutil.which("ffmpeg")
