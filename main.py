@@ -144,6 +144,9 @@ class YoutubeContent:
                     self.filename = Path(ydl.prepare_filename(info)).with_suffix(".mp4")
             except Exception as e:
                 print(f"Error occurred while downloading video: {e}")
+        else:
+            print("Valid URL, but no video could be found or the site isn't supported.")
+            raise ValueError("URL not supported or no video found")
 
     def download_audio(self):
         ydl_opts = {
@@ -163,6 +166,9 @@ class YoutubeContent:
                     self.filename = Path(ydl.prepare_filename(info)).with_suffix(".mp3")
             except Exception as e:
                 print(f"Error occurred while downloading audio: {e}")
+        else:
+            print("Valid URL, but no audio could be found or the site isn't supported.")
+            raise ValueError("URL not supported or no audio found")
 
 v1 = YoutubeContent("")
 
@@ -184,21 +190,35 @@ def download_video(resolution: int):
         raise HTTPException(400, "Resolution must be at least 144p")
     if not v1.URL:
         raise HTTPException(400, "Set a URL first.")
-    v1.download_video(resolution)
-    return {"downloaded": f"Video downloaded at {resolution}p"}
+    try:
+        v1.download_video(resolution)
+        return {"downloaded": f"Video downloaded at {resolution}p"}
+    except FileNotFoundError as e:      # ffmpeg missing
+        raise HTTPException(500, str(e))
+    except (ValueError, DownloadError) as e:
+        raise HTTPException(422, f"Could not download: {e}")
 
-@app.post("/content/audio/download")
+@app.get("/content/audio/download")
 def download_audio():
     if not v1.URL:
         raise HTTPException(400, "Set a URL first.")
-    v1.download_audio()
-    return {"downloaded": "Audio downloaded as mp3"}
-
-def cleanup_file(path: Path):
     try:
-        path.unlink(missing_ok=True)
-    except OSError as e:
-        print(f"Could not delete {path}: {e}")
+        v1.download_audio()
+        return {"downloaded": "Audio downloaded as mp3"}
+    except FileNotFoundError as e:      # ffmpeg missing
+        raise HTTPException(500, str(e))
+    except (ValueError, DownloadError) as e:
+        raise HTTPException(422, f"Could not download: {e}")
+
+def cleanup_downloads():
+    for item in DOWNLOAD_DIR.iterdir():
+        try:
+            if item.is_dir():
+                shutil.rmtree(item)
+            else:
+                item.unlink()
+        except OSError as e:
+            print(f"Could not delete {item}: {e}")
 
 @app.get("/content/downloaded/file")
 def get_downloaded_file():
@@ -208,4 +228,4 @@ def get_downloaded_file():
 
     media = "video/mp4" if v1.filename.suffix == ".mp4" else "audio/mpeg"
     v1.filename = None
-    return FileResponse(path, media_type=media, filename=path.name, background=BackgroundTask(cleanup_file, path))
+    return FileResponse(path, media_type=media, filename=path.name, background=BackgroundTask(cleanup_downloads))
