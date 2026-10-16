@@ -14,12 +14,46 @@ def ensure_yt_dlp():
         print("Install it manually with:  pip install -r requirements.txt")
         sys.exit(1)
 
+    print("Installing yt-dlp...")
     try:
         subprocess.check_call([sys.executable, "-m", "pip", "install", "yt-dlp"])
     except subprocess.CalledProcessError:
         print("Installation failed. Try:  pip install yt-dlp")
         sys.exit(1)
 ensure_yt_dlp()
+
+def ensure_ffmpeg_android():
+    is_android = (
+        sys.platform == "android"
+        or hasattr(sys, "getandroidapilevel")
+        or "ANDROID_ROOT" in os.environ
+    )
+    if not is_android or shutil.which("ffmpeg"):
+        return
+
+    pkg = shutil.which("pkg")
+    if not pkg:
+        print("FFmpeg is not installed. On Android, install it with Termux: pkg install ffmpeg")
+        sys.exit(1)
+
+    print("FFmpeg is not installed.")
+    answer = input("Install it now? [y/n]: ").strip().lower()
+    if answer != "y":
+        print("Install it manually with: pkg install ffmpeg")
+        sys.exit(1)
+
+    print("Installing FFmpeg...")
+    try:
+        subprocess.check_call([pkg, "install", "-y", "ffmpeg"])
+    except subprocess.CalledProcessError:
+        print("Installation failed. Try: pkg install ffmpeg")
+        sys.exit(1)
+
+    if not shutil.which("ffmpeg"):
+        print("FFmpeg installation completed, but ffmpeg is still not available in PATH.")
+        sys.exit(1)
+ensure_ffmpeg_android()
+
 from yt_dlp import YoutubeDL
 from urllib.parse import urlparse
 from yt_dlp.utils import DownloadError
