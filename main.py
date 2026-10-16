@@ -3,6 +3,18 @@ import os
 import subprocess
 import sys
 import shutil
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from pathlib import Path
+from starlette.background import BackgroundTask
+
+BASE_DIR = Path(__file__).resolve().parent
+DOWNLOAD_DIR = BASE_DIR / "downloads"
+shutil.rmtree(DOWNLOAD_DIR, ignore_errors=True)
+DOWNLOAD_DIR.mkdir(exist_ok=True)
+
+app = FastAPI()
+
 def ensure_yt_dlp():
     if importlib.util.find_spec("yt_dlp") is not None:
         print("yt-dlp is already installed.")
@@ -24,8 +36,6 @@ ensure_yt_dlp()
 from yt_dlp import YoutubeDL
 from urllib.parse import urlparse
 from yt_dlp.utils import DownloadError
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def get_ffmpeg_location():
     system_ffmpeg = shutil.which("ffmpeg")
@@ -58,37 +68,37 @@ def is_supported_url(url: str) -> bool:
     except DownloadError:
         return False
 
-class youtube_video:
+class YoutubeContent:
     URL: str
-    has_2160: bool
-    has_1440: bool
-    has_1080: bool
-    has_720: bool
-    has_480: bool
-    has_360: bool
-    has_240: bool
-    has_144: bool
+    filename: str
+    formats_list:dict = {
+        "2160p": False,
+        "1440p": False,
+        "1080p": False,
+        "720p": False,
+        "480p": False,
+        "360p": False,
+        "240p": False,
+        "144p": False
+    }
 
     def display(self):
-        print(f"2160p: {self.has_2160}")
-        print(f"1440p: {self.has_1440}")
-        print(f"1080p: {self.has_1080}")
-        print(f"720p: {self.has_720}")
-        print(f"480p: {self.has_480}")
-        print(f"360p: {self.has_360}")
-        print(f"240p: {self.has_240}")
-        print(f"144p: {self.has_144}")
+        for resolution, available in self.formats_list.items():
+            print(f"{resolution}: {available}")
 
     def __init__(self,URL):
         self.URL = URL
-        self.has_2160 = False
-        self.has_1440 = False
-        self.has_1080 = False
-        self.has_720 = False
-        self.has_480 = False
-        self.has_360 = False
-        self.has_240 = False
-        self.has_144 = False
+        self.filename = None
+        self.formats_list = {
+            "2160p": False,
+            "1440p": False,
+            "1080p": False,
+            "720p": False,
+            "480p": False,
+            "360p": False,
+            "240p": False,
+            "144p": False
+        }
 
     def check_resolution(self):
         ydl_opts = {
@@ -100,21 +110,21 @@ class youtube_video:
                 for f in formats:
                     format_note = f.get("format_note")
                     if format_note == "2160p" or format_note == "2160p60":
-                        self.has_2160 = True
-                    elif format_note == "1440p" or format_note == "1440p60":
-                        self.has_1440 = True
-                    elif format_note == "1080p" or format_note == "1080p60":
-                        self.has_1080 = True
-                    elif format_note == "720p" or format_note == "720p60":
-                        self.has_720 = True
-                    elif format_note == "480p":
-                        self.has_480 = True
-                    elif format_note == "360p":
-                        self.has_360 = True
-                    elif format_note == "240p":
-                        self.has_240 = True
-                    elif format_note == "144p":
-                        self.has_144 = True
+                        self.formats_list["2160p"] = True
+                    if format_note == "1440p" or format_note == "1440p60":
+                        self.formats_list["1440p"] = True
+                    if format_note == "1080p" or format_note == "1080p60":
+                        self.formats_list["1080p"] = True
+                    if format_note == "720p" or format_note == "720p60":
+                        self.formats_list["720p"] = True
+                    if format_note == "480p":
+                        self.formats_list["480p"] = True
+                    if format_note == "360p":
+                        self.formats_list["360p"] = True
+                    if format_note == "240p":
+                        self.formats_list["240p"] = True
+                    if format_note == "144p":
+                        self.formats_list["144p"] = True
                     else:
                         pass
         else:
@@ -125,11 +135,13 @@ class youtube_video:
             'format': f'bestvideo[height<={resolution}]+bestaudio/best',
             'merge_output_format': 'mp4',
             'ffmpeg_location': get_ffmpeg_location(),
+            'outtmpl': str(DOWNLOAD_DIR / '%(title)s.%(ext)s'),
         }
         if is_supported_url(self.URL):
             try:
                 with YoutubeDL(ydl_opts) as ydl:
-                    ydl.download(self.URL)
+                    info =ydl.extract_info(self.URL, download=True)
+                    self.filename = Path(ydl.prepare_filename(info)).with_suffix(".mp4")
             except Exception as e:
                 print(f"Error occurred while downloading video: {e}")
 
@@ -142,54 +154,57 @@ class youtube_video:
                 'preferredquality': '0',
             }],
             'ffmpeg_location': get_ffmpeg_location(),
+            'outtmpl': str(DOWNLOAD_DIR / '%(title)s.%(ext)s'),
         }
         if is_supported_url(self.URL):
             try:
                 with YoutubeDL(ydl_opts) as ydl:
-                    ydl.download(self.URL)
+                    info =ydl.extract_info(self.URL, download=True)
+                    self.filename = Path(ydl.prepare_filename(info)).with_suffix(".mp3")
             except Exception as e:
                 print(f"Error occurred while downloading audio: {e}")
 
-def main():
-    while True:
-        URL = input("Enter video URL: ").strip()
-        if not is_valid_url(URL):
-            print("That doesn't look like a valid URL.")
-            continue
-        if not is_supported_url(URL):
-            print("Valid URL, but no video could be found or the site isn't supported.")
-            continue
-        break
+v1 = YoutubeContent("")
 
-    video = youtube_video(URL)
-    while True:
-        try:
-            choice = int(input("[1] download video [2] download audio: "))
-        except ValueError:
-            print("Please enter a valid number.")
-            continue
-        if choice == 1:
-            video.check_resolution()
-            video.display()
-            while True:
-                try:
-                    resolution = int(input("enter resolution without (p): "))
-                except ValueError:
-                    print("Please enter a valid number.")
-                    continue
-                if resolution >= 144:
-                    video.download_video(resolution)
-                    break
-                else:
-                    print("Enter valid resolution")
-                    continue
-            break
-        elif choice == 2:
-            video.download_audio()
-            break
-        else:
-            print("enter valid number")
-            continue
+@app.post("/content/url")
+def post_video_url(url: str):
+    if not is_valid_url(url):
+        raise HTTPException(400, "Invalid URL")
+    v1.URL = url
+    return {"video_url": url}
 
-if __name__ == "__main__":
-    main()
+@app.get("/content/video/formats")
+def check_formats():
+    v1.check_resolution()
+    return {"formats": v1.formats_list}
+
+@app.post("/content/video/download")
+def download_video(resolution: int):
+    if resolution < 144:
+        raise HTTPException(400, "Resolution must be at least 144p")
+    if not v1.URL:
+        raise HTTPException(400, "Set a URL first.")
+    v1.download_video(resolution)
+    return {"downloaded": f"Video downloaded at {resolution}p"}
+
+@app.post("/content/audio/download")
+def download_audio():
+    if not v1.URL:
+        raise HTTPException(400, "Set a URL first.")
+    v1.download_audio()
+    return {"downloaded": "Audio downloaded as mp3"}
+
+def cleanup_file(path: Path):
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as e:
+        print(f"Could not delete {path}: {e}")
+
+@app.get("/content/downloaded/file")
+def get_downloaded_file():
+    if not v1.filename:
+        raise HTTPException(404, "No file has been downloaded yet.")
+
+    media = "video/mp4" if v1.filename.suffix == ".mp4" else "audio/mpeg"
+    v1.filename = None
+    return FileResponse(v1.filename, media_type=media, filename=v1.filename.name,background=BackgroundTask(cleanup_file, v1.filename))
