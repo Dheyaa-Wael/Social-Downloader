@@ -202,9 +202,10 @@ def cleanup_file(path: Path):
 
 @app.get("/content/downloaded/file")
 def get_downloaded_file():
+    path = v1.filename
     if not v1.filename:
         raise HTTPException(404, "No file has been downloaded yet.")
 
     media = "video/mp4" if v1.filename.suffix == ".mp4" else "audio/mpeg"
     v1.filename = None
-    return FileResponse(v1.filename, media_type=media, filename=v1.filename.name,background=BackgroundTask(cleanup_file, v1.filename))
+    return FileResponse(path, media_type=media, filename=path.name, background=BackgroundTask(cleanup_file, path))
