@@ -1,12 +1,13 @@
-import importlib.util
 import os
-import subprocess
 import sys
 import shutil
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pathlib import Path
 from starlette.background import BackgroundTask
+from yt_dlp import YoutubeDL
+from urllib.parse import urlparse
+from yt_dlp.utils import DownloadError
 
 BASE_DIR = Path(__file__).resolve().parent
 DOWNLOAD_DIR = BASE_DIR / "downloads"
@@ -15,27 +16,6 @@ DOWNLOAD_DIR.mkdir(exist_ok=True)
 
 app = FastAPI()
 
-def ensure_yt_dlp():
-    if importlib.util.find_spec("yt_dlp") is not None:
-        print("yt-dlp is already installed.")
-        return
-
-    print("yt-dlp is not installed.")
-    answer = input("Install it now? [y/n]: ").strip().lower()
-    if answer != "y":
-        print("Install it manually with:  pip install -r requirements.txt")
-        sys.exit(1)
-
-    print("Installing yt-dlp...")
-    try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "yt-dlp"])
-    except subprocess.CalledProcessError:
-        print("Installation failed. Try:  pip install yt-dlp")
-        sys.exit(1)
-ensure_yt_dlp()
-from yt_dlp import YoutubeDL
-from urllib.parse import urlparse
-from yt_dlp.utils import DownloadError
 
 def get_ffmpeg_location():
     system_ffmpeg = shutil.which("ffmpeg")
