@@ -1,6 +1,7 @@
 import os
 import sys
 import shutil
+import uuid
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pathlib import Path
@@ -51,6 +52,7 @@ def is_supported_url(url: str) -> bool:
 class YoutubeContent:
     URL: str
     filename: str
+    folder: Path
     formats_list:dict = {
         "2160p": False,
         "1440p": False,
@@ -66,8 +68,9 @@ class YoutubeContent:
         for resolution, available in self.formats_list.items():
             print(f"{resolution}: {available}")
 
-    def __init__(self,URL):
+    def __init__(self,URL, folder):
         self.URL = URL
+        self.folder = folder
         self.filename = None
         self.formats_list = {
             "2160p": False,
@@ -115,7 +118,7 @@ class YoutubeContent:
             'format': f'bestvideo[height<={resolution}]+bestaudio/best',
             'merge_output_format': 'mp4',
             'ffmpeg_location': get_ffmpeg_location(),
-            'outtmpl': str(DOWNLOAD_DIR / '%(title)s.%(ext)s'),
+            'outtmpl': str(self.folder / '%(title)s.%(ext)s'),
         }
         if is_supported_url(self.URL):
             try:
@@ -137,7 +140,7 @@ class YoutubeContent:
                 'preferredquality': '0',
             }],
             'ffmpeg_location': get_ffmpeg_location(),
-            'outtmpl': str(DOWNLOAD_DIR / '%(title)s.%(ext)s'),
+            'outtmpl': str(self.folder / '%(title)s.%(ext)s'),
         }
         if is_supported_url(self.URL):
             try:
@@ -150,7 +153,23 @@ class YoutubeContent:
             print("Valid URL, but no audio could be found or the site isn't supported.")
             raise ValueError("URL not supported or no audio found")
 
-v1 = YoutubeContent("")
+v1 = YoutubeContent("", DOWNLOAD_DIR / "default")
+
+jobs: dict[str, dict] = {}
+
+def new_status():
+    return {"downloaded": False, "state": "idle", "message": "No download in progress."}
+
+def get_job(job_id: str) -> dict:
+    job = jobs.get(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found.")
+    return job
+
+def cleanup_job(job_id: str):
+    job = jobs.pop(job_id, None)
+    if job:
+        shutil.rmtree(job["content"].folder, ignore_errors=True)
 
 @app.get("/")
 def root():
@@ -160,27 +179,29 @@ def root():
 def post_video_url(url: str):
     if not is_valid_url(url):
         raise HTTPException(400, "Invalid URL")
-    v1.URL = url
-    return {"video_url": url}
+    job_id = uuid.uuid4().hex
+    folder = DOWNLOAD_DIR / job_id
+    folder.mkdir()
+    jobs[job_id] = {"content": YoutubeContent(url, folder), "status": new_status()}
+    return {"job_id": job_id, "video_url": url}
 
-@app.get("/content/video/formats")
-def check_formats():
-    v1.check_resolution()
-    return {"formats": v1.formats_list}
+@app.get("/content/{job_id}/video/formats")
+def check_formats(job_id: str):
+    content = get_job(job_id)["content"]
+    content.check_resolution()
+    return {"formats": content.formats_list}
 
-download_status: dict = {
-        "downloaded": False,
-        "state": "idle",
-        "message": "No download in progress."
-    }
-@app.post("/content/video/download")
-def download_video(resolution: int):
+@app.post("/content/{job_id}/video/download")
+def download_video(resolution: int, job_id: str):
+    job = get_job(job_id)
+    download_status = job["status"]
+    content = job["content"]
     if resolution < 144:
         download_status["downloaded"] = False
         download_status["state"] = "error"
         download_status["message"] = "Resolution must be at least 144p"
         raise HTTPException(400, "Resolution must be at least 144p")
-    if not v1.URL:
+    if not content.URL:
         download_status["downloaded"] = False
         download_status["state"] = "error"
         download_status["message"] = "Set a URL first."
@@ -189,7 +210,7 @@ def download_video(resolution: int):
         download_status["downloaded"] = False
         download_status["state"] = "preparing"
         download_status["message"] = f"Preparing to download video at {resolution}p"
-        v1.download_video(resolution)
+        content.download_video(resolution)
         download_status["downloaded"] = True
         download_status["state"] = "completed"
         download_status["message"] = f"Video downloaded at {resolution}p"
@@ -199,43 +220,43 @@ def download_video(resolution: int):
     except (ValueError, DownloadError) as e:
         raise HTTPException(422, f"Could not download: {e}")
 
-@app.get("/content/video/download")
-def download_state():
-    return download_status
+@app.get("/content/{job_id}/video/download")
+def download_state(job_id: str):
+    return get_job(job_id)["status"]
 
-@app.get("/content/audio/download")
-def download_audio():
-    if not v1.URL:
+@app.get("/content/{job_id}/audio/download")
+def download_audio(job_id: str):
+    content = get_job(job_id)["content"]
+    download_status = get_job(job_id)["status"]
+    if not content.URL:
         raise HTTPException(400, "Set a URL first.")
     try:
-        v1.download_audio()
+        download_status["downloaded"] = False
+        download_status["state"] = "preparing"
+        download_status["message"] = f"Preparing to download audio"
+        content.download_audio()
+        download_status["downloaded"] = True
+        download_status["state"] = "completed"
+        download_status["message"] = f"Audio downloaded as mp3"
         return {"downloaded": "Audio downloaded as mp3"}
     except FileNotFoundError as e:      # ffmpeg missing
         raise HTTPException(500, str(e))
     except (ValueError, DownloadError) as e:
         raise HTTPException(422, f"Could not download: {e}")
 
-def cleanup_downloads():
-    for item in DOWNLOAD_DIR.iterdir():
-        try:
-            if item.is_dir():
-                shutil.rmtree(item)
-                print(f"Deleted directory: {item}")
-            else:
-                item.unlink()
-                print(f"Deleted file: {item}")
-        except OSError as e:
-            print(f"Could not delete {item}: {e}")
+@app.get("/content/{job_id}/downloaded/file")
+def get_downloaded_file(job_id: str):
+    job = get_job(job_id)
+    content = job["content"]
+    download_status = job["status"]
 
-@app.get("/content/downloaded/file")
-def get_downloaded_file():
-    path = v1.filename
-    if not v1.filename:
+    path = content.filename
+    if not content.filename:
         raise HTTPException(404, "No file has been downloaded yet.")
 
-    media = "video/mp4" if v1.filename.suffix == ".mp4" else "audio/mpeg"
-    v1.filename = None
+    media = "video/mp4" if content.filename.suffix == ".mp4" else "audio/mpeg"
+    content.filename = None
     download_status["downloaded"] = False
     download_status["state"] = "idle"
     download_status["message"] = "No download in progress."
-    return FileResponse(path, media_type=media, filename=path.name, background=BackgroundTask(cleanup_downloads))
+    return FileResponse(path, media_type=media, filename=path.name, background=BackgroundTask(cleanup_job, job_id))
