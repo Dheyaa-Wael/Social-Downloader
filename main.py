@@ -152,6 +152,10 @@ class YoutubeContent:
 
 v1 = YoutubeContent("")
 
+@app.get("/")
+def root():
+    return {"message": "Welcome to the YouTube Downloader API. Use /docs for API documentation."}
+
 @app.post("/content/url")
 def post_video_url(url: str):
     if not is_valid_url(url):
@@ -164,19 +168,40 @@ def check_formats():
     v1.check_resolution()
     return {"formats": v1.formats_list}
 
+download_status: dict = {
+        "downloaded": False,
+        "state": "idle",
+        "message": "No download in progress."
+    }
 @app.post("/content/video/download")
 def download_video(resolution: int):
     if resolution < 144:
+        download_status["downloaded"] = False
+        download_status["state"] = "error"
+        download_status["message"] = "Resolution must be at least 144p"
         raise HTTPException(400, "Resolution must be at least 144p")
     if not v1.URL:
+        download_status["downloaded"] = False
+        download_status["state"] = "error"
+        download_status["message"] = "Set a URL first."
         raise HTTPException(400, "Set a URL first.")
     try:
+        download_status["downloaded"] = False
+        download_status["state"] = "preparing"
+        download_status["message"] = f"Preparing to download video at {resolution}p"
         v1.download_video(resolution)
+        download_status["downloaded"] = True
+        download_status["state"] = "completed"
+        download_status["message"] = f"Video downloaded at {resolution}p"
         return {"downloaded": f"Video downloaded at {resolution}p"}
     except FileNotFoundError as e:      # ffmpeg missing
         raise HTTPException(500, str(e))
     except (ValueError, DownloadError) as e:
         raise HTTPException(422, f"Could not download: {e}")
+
+@app.get("/content/video/download")
+def download_state():
+    return download_status
 
 @app.get("/content/audio/download")
 def download_audio():
@@ -195,8 +220,10 @@ def cleanup_downloads():
         try:
             if item.is_dir():
                 shutil.rmtree(item)
+                print(f"Deleted directory: {item}")
             else:
                 item.unlink()
+                print(f"Deleted file: {item}")
         except OSError as e:
             print(f"Could not delete {item}: {e}")
 
@@ -208,4 +235,7 @@ def get_downloaded_file():
 
     media = "video/mp4" if v1.filename.suffix == ".mp4" else "audio/mpeg"
     v1.filename = None
+    download_status["downloaded"] = False
+    download_status["state"] = "idle"
+    download_status["message"] = "No download in progress."
     return FileResponse(path, media_type=media, filename=path.name, background=BackgroundTask(cleanup_downloads))
