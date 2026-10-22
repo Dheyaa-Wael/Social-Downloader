@@ -53,6 +53,12 @@ class YoutubeContent:
     URL: str
     filename: str
     folder: Path
+    channel: str
+    title: str
+    duration_str: str
+    viewers: int
+    like_count: int
+    thumbnail: str
     formats_list:dict = {
         "2160p": False,
         "1440p": False,
@@ -63,6 +69,16 @@ class YoutubeContent:
         "240p": False,
         "144p": False
     }
+    size_list:dict[str,float] = {
+        "2160_size": 0,
+        "1440_size": 0,
+        "1080_size": 0,
+        "720_size": 0,
+        "480_size": 0,
+        "360_size": 0,
+        "240_size": 0,
+        "144_size": 0
+    }
 
     def display(self):
         for resolution, available in self.formats_list.items():
@@ -72,6 +88,12 @@ class YoutubeContent:
         self.URL = URL
         self.folder = folder
         self.filename = None
+        self.channel = "unknown"
+        self.title = "unknown"
+        self.duration_str = "00:00"
+        self.viewers = 0
+        self.like_count = 0
+        self.thumbnail = None
         self.formats_list = {
             "2160p": False,
             "1440p": False,
@@ -83,33 +105,46 @@ class YoutubeContent:
             "144p": False
         }
 
-    def check_resolution(self):
+    def get_video_info(self):
         ydl_opts = {
         }
         if is_supported_url(self.URL):
             with YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(self.URL, download=False)
+                self.channel = info.get("channel")
+                self.title = info.get("title")
+                self.duration_str = info.get("duration_string")
+                self.viewers = info.get("view_count")
+                self.like_count = info.get("like_count")
+                self.thumbnail = info.get("thumbnail")
                 formats = info.get('formats', [])
                 for f in formats:
+                    format_size = f.get("filesize")
                     format_note = f.get("format_note")
                     if format_note == "2160p" or format_note == "2160p60":
                         self.formats_list["2160p"] = True
+                        self.size_list["2160_size"] = format_size / 1000000
                     if format_note == "1440p" or format_note == "1440p60":
                         self.formats_list["1440p"] = True
+                        self.size_list["1440_size"] = format_size / 1000000
                     if format_note == "1080p" or format_note == "1080p60":
                         self.formats_list["1080p"] = True
+                        self.size_list["1080_size"] = format_size / 1000000
                     if format_note == "720p" or format_note == "720p60":
                         self.formats_list["720p"] = True
+                        self.size_list["720_size"] = format_size / 1000000
                     if format_note == "480p":
                         self.formats_list["480p"] = True
+                        self.size_list["480_size"] = format_size / 1000000
                     if format_note == "360p":
                         self.formats_list["360p"] = True
+                        self.size_list["360_size"] = format_size / 1000000
                     if format_note == "240p":
                         self.formats_list["240p"] = True
+                        self.size_list["240_size"] = format_size / 1000000
                     if format_note == "144p":
                         self.formats_list["144p"] = True
-                    else:
-                        pass
+                        self.size_list["144_size"] = format_size / 1000000
         else:
             print("Valid URL, but no video could be found or the site isn't supported.")
     
@@ -185,11 +220,20 @@ def post_video_url(url: str):
     jobs[job_id] = {"content": YoutubeContent(url, folder), "status": new_status()}
     return {"job_id": job_id, "video_url": url}
 
-@app.get("/content/{job_id}/video/formats")
-def check_formats(job_id: str):
+@app.get("/content/{job_id}/info")
+def get_video_info(job_id: str):
     content = get_job(job_id)["content"]
-    content.check_resolution()
-    return {"formats": content.formats_list}
+    content.get_video_info()
+    return {
+        "channel" : content.channel,
+        "title" : content.title,
+        "duration_string" : content.duration_str,
+        "viewers" : content.viewers,
+        "likes" : content.like_count,
+        "thumbnail" : content.thumbnail,
+        "formats" : content.formats_list,
+        "sizes" : content.size_list,
+    }
 
 @app.post("/content/{job_id}/video/download")
 def download_video(resolution: int, job_id: str):
