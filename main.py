@@ -60,14 +60,14 @@ class YoutubeContent:
     like_count: int
     thumbnail: str
     formats_list:dict = {
-        "2160p": False,
-        "1440p": False,
-        "1080p": False,
-        "720p": False,
-        "480p": False,
-        "360p": False,
-        "240p": False,
-        "144p": False
+        "2160": False,
+        "1440": False,
+        "1080": False,
+        "720": False,
+        "480": False,
+        "360": False,
+        "240": False,
+        "144": False
     }
     size_list:dict[str,float] = {
         "2160_size": 0,
@@ -95,14 +95,14 @@ class YoutubeContent:
         self.like_count = 0
         self.thumbnail = None
         self.formats_list = {
-            "2160p": False,
-            "1440p": False,
-            "1080p": False,
-            "720p": False,
-            "480p": False,
-            "360p": False,
-            "240p": False,
-            "144p": False
+            "2160": False,
+            "1440": False,
+            "1080": False,
+            "720": False,
+            "480": False,
+            "360": False,
+            "240": False,
+            "144": False
         }
 
     def get_video_info(self):
@@ -122,28 +122,28 @@ class YoutubeContent:
                     format_size = f.get("filesize")
                     format_note = f.get("format_note")
                     if format_note == "2160p" or format_note == "2160p60":
-                        self.formats_list["2160p"] = True
+                        self.formats_list["2160"] = True
                         self.size_list["2160_size"] = format_size / 1000000
                     if format_note == "1440p" or format_note == "1440p60":
-                        self.formats_list["1440p"] = True
+                        self.formats_list["1440"] = True
                         self.size_list["1440_size"] = format_size / 1000000
                     if format_note == "1080p" or format_note == "1080p60":
-                        self.formats_list["1080p"] = True
+                        self.formats_list["1080"] = True
                         self.size_list["1080_size"] = format_size / 1000000
                     if format_note == "720p" or format_note == "720p60":
-                        self.formats_list["720p"] = True
+                        self.formats_list["720"] = True
                         self.size_list["720_size"] = format_size / 1000000
                     if format_note == "480p":
-                        self.formats_list["480p"] = True
+                        self.formats_list["480"] = True
                         self.size_list["480_size"] = format_size / 1000000
                     if format_note == "360p":
-                        self.formats_list["360p"] = True
+                        self.formats_list["360"] = True
                         self.size_list["360_size"] = format_size / 1000000
                     if format_note == "240p":
-                        self.formats_list["240p"] = True
+                        self.formats_list["240"] = True
                         self.size_list["240_size"] = format_size / 1000000
                     if format_note == "144p":
-                        self.formats_list["144p"] = True
+                        self.formats_list["144"] = True
                         self.size_list["144_size"] = format_size / 1000000
         else:
             print("Valid URL, but no video could be found or the site isn't supported.")
@@ -228,7 +228,7 @@ def get_video_info(job_id: str):
         "channel" : content.channel,
         "title" : content.title,
         "duration_string" : content.duration_str,
-        "viewers" : content.viewers,
+        "views" : content.viewers,
         "likes" : content.like_count,
         "thumbnail" : content.thumbnail,
         "formats" : content.formats_list,
@@ -303,4 +303,9 @@ def get_downloaded_file(job_id: str):
     download_status["downloaded"] = False
     download_status["state"] = "idle"
     download_status["message"] = "No download in progress."
-    return FileResponse(path, media_type=media, filename=path.name, background=BackgroundTask(cleanup_job, job_id))
+    return FileResponse(path, media_type=media, filename=path.name)
+
+@app.get("/content/{job_id}/downloaded/file/delete")
+def delete_job(job_id: str):
+    cleanup_job(job_id)
+    return {"massage" : "job has been deleted"}
