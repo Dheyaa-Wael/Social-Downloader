@@ -212,6 +212,8 @@ def root():
 def post_video_url(url: str):
     if not is_valid_url(url):
         raise HTTPException(400, "Invalid URL")
+    if not is_supported_url(url):
+        raise HTTPException(400, "Unsupported URL")
     job_id = uuid.uuid4().hex
     folder = DOWNLOAD_DIR / job_id
     folder.mkdir()
