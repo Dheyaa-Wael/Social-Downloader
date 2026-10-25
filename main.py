@@ -49,7 +49,7 @@ def is_supported_url(url: str) -> bool:
     except DownloadError:
         return False
 
-class YoutubeContent:
+class MediaContent:
     URL: str
     filename: str
     folder: Path
@@ -188,8 +188,6 @@ class YoutubeContent:
             print("Valid URL, but no audio could be found or the site isn't supported.")
             raise ValueError("URL not supported or no audio found")
 
-v1 = YoutubeContent("", DOWNLOAD_DIR / "default")
-
 jobs: dict[str, dict] = {}
 
 def new_status():
@@ -217,7 +215,7 @@ def post_video_url(url: str):
     job_id = uuid.uuid4().hex
     folder = DOWNLOAD_DIR / job_id
     folder.mkdir()
-    jobs[job_id] = {"content": YoutubeContent(url, folder), "status": new_status()}
+    jobs[job_id] = {"content": MediaContent(url, folder), "status": new_status()}
     return {"job_id": job_id, "video_url": url}
 
 @app.get("/content/{job_id}/info")
@@ -259,7 +257,7 @@ def download_video(resolution: int, job_id: str):
         download_status["state"] = "completed"
         download_status["message"] = f"Video downloaded at {resolution}p"
         return {"downloaded": f"Video downloaded at {resolution}p"}
-    except FileNotFoundError as e:      # ffmpeg missing
+    except FileNotFoundError as e:
         raise HTTPException(500, str(e))
     except (ValueError, DownloadError) as e:
         raise HTTPException(422, f"Could not download: {e}")
@@ -283,7 +281,7 @@ def download_audio(job_id: str):
         download_status["state"] = "completed"
         download_status["message"] = f"Audio downloaded as mp3"
         return {"downloaded": "Audio downloaded as mp3"}
-    except FileNotFoundError as e:      # ffmpeg missing
+    except FileNotFoundError as e:
         raise HTTPException(500, str(e))
     except (ValueError, DownloadError) as e:
         raise HTTPException(422, f"Could not download: {e}")
