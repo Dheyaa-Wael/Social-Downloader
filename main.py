@@ -9,6 +9,9 @@ from starlette.background import BackgroundTask
 from yt_dlp import YoutubeDL
 from urllib.parse import urlparse
 from yt_dlp.utils import DownloadError
+from fastapi.responses import StreamingResponse
+import asyncio
+from fastapi import BackgroundTasks
 
 BASE_DIR = Path(__file__).resolve().parent
 DOWNLOAD_DIR = BASE_DIR / "downloads"
@@ -51,6 +54,7 @@ def is_supported_url(url: str) -> bool:
 
 class MediaContent:
     URL: str
+    progress: float
     filename: str
     folder: Path
     channel: str
@@ -80,12 +84,15 @@ class MediaContent:
         "144_size": 0
     }
 
-    def display(self):
-        for resolution, available in self.formats_list.items():
-            print(f"{resolution}: {available}")
+    def progress_hook(self,d):
+        if d['status'] == 'downloading':
+            self.progress = (float(d['downloaded_bytes'])/float(d['total_bytes']))
+        elif d['status'] == 'finished':
+            print('finished')
 
     def __init__(self,URL, folder):
         self.URL = URL
+        self.progress = 0
         self.folder = folder
         self.filename = None
         self.channel = "unknown"
@@ -154,6 +161,7 @@ class MediaContent:
             'merge_output_format': 'mp4',
             'ffmpeg_location': get_ffmpeg_location(),
             'outtmpl': str(self.folder / '%(title)s.%(ext)s'),
+            'progress_hooks' : [self.progress_hook],
         }
         if is_supported_url(self.URL):
             try:
@@ -176,6 +184,7 @@ class MediaContent:
             }],
             'ffmpeg_location': get_ffmpeg_location(),
             'outtmpl': str(self.folder / '%(title)s.%(ext)s'),
+            'progress_hooks' : [self.progress_hook],
         }
         if is_supported_url(self.URL):
             try:
@@ -235,11 +244,19 @@ def get_video_info(job_id: str):
         "sizes" : content.size_list,
     }
 
+background_tasks = BackgroundTasks()
 @app.post("/content/{job_id}/video/download")
 def download_video(resolution: int, job_id: str):
     job = get_job(job_id)
     download_status = job["status"]
     content = job["content"]
+    async def event_gen():
+        while True:
+            payload = {content.progress}
+            yield f"progress: {content.progress}"
+            if content.progress >= 1:
+                break
+            await asyncio.sleep(0.5)
     if resolution < 144:
         download_status["downloaded"] = False
         download_status["state"] = "error"
@@ -254,11 +271,11 @@ def download_video(resolution: int, job_id: str):
         download_status["downloaded"] = False
         download_status["state"] = "preparing"
         download_status["message"] = f"Preparing to download video at {resolution}p"
-        content.download_video(resolution)
+        background_tasks.add_task(content.download_video(resolution))
         download_status["downloaded"] = True
         download_status["state"] = "completed"
         download_status["message"] = f"Video downloaded at {resolution}p"
-        return {"downloaded": f"Video downloaded at {resolution}p"}
+        return StreamingResponse(event_gen(), media_type="text/plain")
     except FileNotFoundError as e:
         raise HTTPException(500, str(e))
     except (ValueError, DownloadError) as e:
@@ -267,6 +284,10 @@ def download_video(resolution: int, job_id: str):
 @app.get("/content/{job_id}/video/download")
 def download_state(job_id: str):
     return get_job(job_id)["status"]
+
+@app.get("/content/{job_id}/progress")
+def get_progress(job_id: str):
+    return get_job(job_id)["content"].progress
 
 @app.get("/content/{job_id}/audio/download")
 def download_audio(job_id: str):
