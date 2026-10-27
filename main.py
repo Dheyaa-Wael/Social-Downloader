@@ -9,9 +9,6 @@ from starlette.background import BackgroundTask
 from yt_dlp import YoutubeDL
 from urllib.parse import urlparse
 from yt_dlp.utils import DownloadError
-from fastapi.responses import StreamingResponse
-import asyncio
-from fastapi import BackgroundTasks
 
 BASE_DIR = Path(__file__).resolve().parent
 DOWNLOAD_DIR = BASE_DIR / "downloads"
@@ -244,19 +241,11 @@ def get_video_info(job_id: str):
         "sizes" : content.size_list,
     }
 
-background_tasks = BackgroundTasks()
 @app.post("/content/{job_id}/video/download")
 def download_video(resolution: int, job_id: str):
     job = get_job(job_id)
     download_status = job["status"]
     content = job["content"]
-    async def event_gen():
-        while True:
-            payload = {content.progress}
-            yield f"progress: {content.progress}"
-            if content.progress >= 1:
-                break
-            await asyncio.sleep(0.5)
     if resolution < 144:
         download_status["downloaded"] = False
         download_status["state"] = "error"
@@ -271,23 +260,20 @@ def download_video(resolution: int, job_id: str):
         download_status["downloaded"] = False
         download_status["state"] = "preparing"
         download_status["message"] = f"Preparing to download video at {resolution}p"
-        background_tasks.add_task(content.download_video(resolution))
+        content.download_video(resolution)
         download_status["downloaded"] = True
         download_status["state"] = "completed"
         download_status["message"] = f"Video downloaded at {resolution}p"
-        return StreamingResponse(event_gen(), media_type="text/plain")
+        return {"download" : "Video downloaded at {resolution}p as mp4"}
     except FileNotFoundError as e:
         raise HTTPException(500, str(e))
     except (ValueError, DownloadError) as e:
         raise HTTPException(422, f"Could not download: {e}")
 
-@app.get("/content/{job_id}/video/download")
-def download_state(job_id: str):
-    return get_job(job_id)["status"]
-
 @app.get("/content/{job_id}/progress")
 def get_progress(job_id: str):
-    return get_job(job_id)["content"].progress
+    job = get_job(job_id)
+    return {"progress" : job["content"].progress , "status" : job["status"]}
 
 @app.get("/content/{job_id}/audio/download")
 def download_audio(job_id: str):
@@ -303,7 +289,7 @@ def download_audio(job_id: str):
         download_status["downloaded"] = True
         download_status["state"] = "completed"
         download_status["message"] = f"Audio downloaded as mp3"
-        return {"downloaded": "Audio downloaded as mp3"}
+        return {"download": "Audio downloaded as mp3"}
     except FileNotFoundError as e:
         raise HTTPException(500, str(e))
     except (ValueError, DownloadError) as e:
